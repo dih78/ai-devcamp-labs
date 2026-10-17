@@ -14,6 +14,8 @@ const TOOL_ICONS: Record<string, string> = {
   generate_image: "🖼️",
   get_profile: "👤",
   create_post: "🚀",
+  // Buffer's create_post, renamed server-side via ADK's tool_name_prefix.
+  buffer_create_post: "🚀",
 };
 
 type Entry = {

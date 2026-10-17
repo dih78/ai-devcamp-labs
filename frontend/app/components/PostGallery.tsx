@@ -117,7 +117,14 @@ function collectGallery(messages: any[]): { images: ImageEntry[]; posts: PostEnt
     if (msg.role === "assistant" && Array.isArray(msg.toolCalls)) {
       for (const call of msg.toolCalls) {
         const name = call.function?.name;
-        if (name === "generate_image" || name === "create_post" || name === "upload_image") {
+        // buffer_create_post is Buffer's create_post, renamed server-side via
+        // ADK's tool_name_prefix (two MCP servers expose the same tool name).
+        if (
+          name === "generate_image" ||
+          name === "create_post" ||
+          name === "buffer_create_post" ||
+          name === "upload_image"
+        ) {
           pending.set(call.id, { name, args: tryParseJSON(call.function?.arguments) });
         }
       }
@@ -145,7 +152,7 @@ function collectGallery(messages: any[]): { images: ImageEntry[]; posts: PostEnt
             match.hostedDryRun = Boolean(result.dry_run);
           }
         }
-      } else if (call.name === "create_post" && !failed) {
+      } else if ((call.name === "create_post" || call.name === "buffer_create_post") && !failed) {
         posts.push({
           id: msg.toolCallId,
           text: call.args?.text ?? "",

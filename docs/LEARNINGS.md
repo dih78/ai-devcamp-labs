@@ -1478,4 +1478,22 @@ so. One passing conversation repeated the injected sentence from the pasted text
   correct-but-differently-worded answers, so move to a rubric judge. It also supplies `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=EVENT_ONLY`
   as the value that keeps full text, and `roles/logging.logWriter` + `roles/cloudtrace.agent` for the deployed identity.
 
+### "Duplicate function declaration found: create_post" — two MCP servers, one tool name
+
+- With a Buffer key resolved and `POST_VIA` unset (the default, auto-routing), the orchestrator exposes LinkedIn's `create_post`
+  (local MCP server) and Buffer's `create_post` (remote MCP server) to the same model call, and Gemini rejects the request
+  outright: `400 INVALID_ARGUMENT ... Duplicate function declaration found: create_post`. ADK does not deduplicate same-named
+  tools from different toolsets; the per-server splits (read-only vs posting) are disjoint by design, but across servers nothing
+  enforces unique names. So "auto" mode simply never worked with a Buffer key — it was never exercised end to end until now.
+- Fix: `tool_name_prefix="buffer_"` on `buffer_post_toolset` (`McpToolset` inherits it via `BaseToolset.get_tools_with_prefix`,
+  ADK 2.4.0). Verified in the ADK source: filtering runs on the RAW name first, then a shallow copy is prefixed, and
+  `McpTool.run_async` still calls the session with the underlying MCP tool's own name — so the tool_filter lambda is untouched,
+  the call reaches Buffer's server as plain `create_post`, and only the model-facing declaration changes. LinkedIn keeps plain
+  `create_post`, which the labs and evals already name.
+- The rename is callback-facing too: before/after tool callbacks see the prefixed name, so every `tool.name == "create_post"`
+  check had to widen to also match `buffer_create_post` — `guardrails.redact_before_post` (miss this and Buffer posts skip DLP
+  redaction silently), `_delay_buffer_post` (forced review delay), `_track_stage` (posted stage + DB save), PostGallery and
+  ActivityFeed (client-side tool-name matching), and `analytics_queries.sql` Q5. When renaming a toolset's tools, grep for the
+  old name everywhere.
+
 <!-- END: Optimise -->

@@ -457,10 +457,24 @@ if BUFFER_API_KEY:
         connection_params=_buffer_connection(),
         tool_filter=["list_channels", "get_account"],
     )
+    # tool_name_prefix="buffer" renames this tool for the model (ADK joins
+    # prefix + "_" + tool name, so the model sees buffer_create_post): both
+    # MCP servers expose a tool literally named create_post, and Gemini
+    # rejects a request carrying two declarations of one name ("Duplicate
+    # function declaration found: create_post") — exactly the default
+    # POST_VIA=auto setup where LinkedIn and Buffer are both exposed. The
+    # filter above still matches the RAW name (prefixing happens after
+    # filtering, see base_toolset.get_tools_with_prefix), and the call still
+    # reaches Buffer's server as plain create_post (McpTool.run_async uses
+    # the underlying MCP tool's own name) — only the model-facing name
+    # changes. LinkedIn's tool keeps the plain create_post name the labs and
+    # evals already use, so every name-matching check in this file, in
+    # guardrails.py, and in the frontend must match BOTH spellings.
     buffer_post_toolset = McpToolset(
         connection_params=_buffer_connection(),
         tool_filter=lambda tool, readonly_context=None: tool.name == "create_post",
         require_confirmation=True,
+        tool_name_prefix="buffer",
     )
 elif POST_VIA == "buffer":
     # Deliberately not a raise. This runs at import, so raising kills the
@@ -495,7 +509,9 @@ def _delay_buffer_post(
     tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
 ) -> Optional[dict]:
     if (
-        tool.name == "create_post"
+        # buffer_create_post = Buffer's create_post, renamed via tool_name_prefix
+        # (see buffer_post_toolset above).
+        tool.name in ("create_post", "buffer_create_post")
         and args.get("channelId")  # Buffer-only field; LinkedIn's local server has none
         and BUFFER_REVIEW_DELAY_MINUTES > 0
     ):
@@ -550,7 +566,10 @@ def _track_stage(
 ) -> Optional[dict]:
     if tool.name in _TOOL_STAGES:
         tool_context.state["pipeline_stage"] = _TOOL_STAGES[tool.name]
-    elif tool.name == "create_post" and tool_response.get("isError") is False:
+    elif (
+        tool.name in ("create_post", "buffer_create_post")  # buffer_ = Buffer's, renamed
+        and tool_response.get("isError") is False
+    ):
         # Fires on BLOCKED attempts too (require_confirmation returns an
         # {"error": ...} without "isError") — only a completed MCP call
         # carries isError: False. See docs/LEARNINGS.md.
@@ -674,16 +693,20 @@ if use_linkedin and use_buffer:
 Two ways to publish, choose based on what the user wants:
 - LinkedIn tool (create_post): an immediate post to LinkedIn only, right now.
   Can include a generated image (pass the local image_path).
-- Buffer tools: use these instead if the user wants to SCHEDULE a post for
-  later, or wants to post to a platform OTHER than LinkedIn (X, Facebook, etc.)
-  that they've connected in Buffer.{_BUFFER_CHANNEL_LOOKUP}{_BUFFER_IMAGE_NOTE}
+- Buffer tool (buffer_create_post): use this instead if the user wants to
+  SCHEDULE a post for later, or wants to post to a platform OTHER than
+  LinkedIn (X, Facebook, etc.) that they've connected in Buffer. The Buffer
+  posting tool is named buffer_create_post — plain create_post is LinkedIn's
+  tool, not a generic one.{_BUFFER_CHANNEL_LOOKUP}{_BUFFER_IMAGE_NOTE}
 """
 elif use_buffer:
     _BUFFER_ROUTING = f"""
 
-Publish exclusively via Buffer's tools (POST_VIA=buffer) — there is no direct
-LinkedIn tool in this configuration. For an immediate post, ask Buffer to
-publish now rather than schedule.{_BUFFER_CHANNEL_LOOKUP}{_BUFFER_IMAGE_NOTE}
+Publish exclusively via Buffer (POST_VIA=buffer) — there is no direct LinkedIn
+tool in this configuration. The posting tool is still named buffer_create_post
+(the buffer_ prefix is deliberate and constant across configurations). For an
+immediate post, ask Buffer to publish now rather than
+schedule.{_BUFFER_CHANNEL_LOOKUP}{_BUFFER_IMAGE_NOTE}
 """
 else:
     _BUFFER_ROUTING = ""
@@ -763,6 +786,7 @@ Posting rules (strict):
   for but did not use.
 """,
     tools=[
+        generate_image,
         *([AgentTool(agent=memory_agent)] if memory_agent else []),
         *([load_memory] if use_memory_bank else []),
         AgentTool(agent=research_agent),

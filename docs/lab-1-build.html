@@ -1131,7 +1131,7 @@ Posting rules (strict):
 
         <div class="callout agent">
           <span class="callout-label">Ask your coding agent</span>
-          <p>Add a second <code>McpToolset</code> that launches <code>mcp/linkedin_server.py</code> over stdio using the current Python interpreter, passing <code>DRY_RUN</code> and <code>LINKEDIN_ACCESS_TOKEN</code> through from the environment, filtered to <code>get_profile</code> and <code>create_post</code>, with <code>require_confirmation=True</code>. Add a <code>POST_VIA</code> environment switch (<code>buffer</code>, <code>linkedin</code>, or blank for both) that decides which toolsets are attached, and add routing guidance to the instruction: LinkedIn for an immediate post with an image, Buffer for scheduling or other platforms.</p>
+          <p>Add a second <code>McpToolset</code> that launches <code>mcp/linkedin_server.py</code> over stdio using the current Python interpreter, passing <code>DRY_RUN</code> and <code>LINKEDIN_ACCESS_TOKEN</code> through from the environment, filtered to <code>get_profile</code> and <code>create_post</code>, with <code>require_confirmation=True</code>. Add a <code>POST_VIA</code> environment switch (<code>buffer</code>, <code>linkedin</code>, or blank for both) that decides which toolsets are attached, and add routing guidance to the instruction: LinkedIn for an immediate post with an image, Buffer for scheduling or other platforms. One collision to handle: Buffer's posting tool is <em>also</em> named <code>create_post</code>, and Gemini rejects a request carrying two declarations of one name — give the Buffer posting toolset <code>tool_name_prefix="buffer"</code> so the model sees <code>buffer_create_post</code> and both can coexist.</p>
         </div>
 
         <h3>1. Read the given LinkedIn MCP server</h3>
@@ -1189,8 +1189,8 @@ use_buffer = bool(BUFFER_API_KEY) and POST_VIA != "linkedin"</code></pre>
         </div>
 
         <div class="callout warn">
-          <span class="callout-label">Known bug: pin POST_VIA explicitly</span>
-          <p>With both LinkedIn's tool and a real Buffer key active together, every turn fails: <code>"Duplicate function declaration found: create_post"</code>; the two tools share a name and Gemini rejects the collision. Leave <code>POST_VIA</code> blank <strong>only</strong> if <code>BUFFER_API_KEY</code> is also blank; otherwise set it to <code>buffer</code> or <code>linkedin</code> explicitly in <code>.env</code>.</p>
+          <span class="callout-label">Gotcha: two MCP servers, one tool name</span>
+          <p>Buffer's posting tool and LinkedIn's are both named <code>create_post</code>, and Gemini rejects any request carrying two declarations of one name: <code>"Duplicate function declaration found: create_post"</code>. With both exposed under the same name, every turn fails. The fix is <code>tool_name_prefix="buffer"</code> on the Buffer <em>posting</em> toolset (ADK 2.4.0+): the model sees and calls <code>buffer_create_post</code>, the tool filter still matches the raw name, and the call still reaches Buffer's server as <code>create_post</code> — only the model-facing declaration is renamed. LinkedIn keeps the plain <code>create_post</code> name. Don't use <code>POST_VIA</code> to dodge this: blank means "expose both and route by request", and the prefix is what makes that mode work.</p>
         </div>
 
         <p>Add the routing guidance to the instruction (choose LinkedIn for an image-carrying immediate post, Buffer for scheduling or other platforms), and add <code>linkedin_toolset</code> to <code>tools=[...]</code> alongside <code>buffer_toolset</code>. Both still gate through <code>require_confirmation=True</code>: same mechanism, two publishers.</p>
@@ -1200,7 +1200,7 @@ use_buffer = bool(BUFFER_API_KEY) and POST_VIA != "linkedin"</code></pre>
 
         <div class="callout check">
           <span class="callout-label">Checkpoint</span>
-          <p>With <code>POST_VIA=linkedin</code>, an immediate post with an image routes to LinkedIn's <code>create_post</code> and the <code>DRY_RUN</code> log shows the payload. With <code>POST_VIA=buffer</code>, the same request goes to Buffer. With both active and <code>POST_VIA</code> blank, you get the duplicate-declaration error described above.</p>
+          <p>With <code>POST_VIA=linkedin</code>, an immediate post with an image routes to LinkedIn's <code>create_post</code> and the <code>DRY_RUN</code> log shows the payload. With <code>POST_VIA=buffer</code>, the same request goes to Buffer. With both active and <code>POST_VIA</code> blank, the agent routes by request: an immediate post calls LinkedIn's <code>create_post</code>, scheduling or another platform calls Buffer's <code>buffer_create_post</code> (the prefixed name — see the gotcha above).</p>
         </div>
         <div class="step-footer">
           <button class="nav-btn" onclick="goTo(6)">← Back</button>

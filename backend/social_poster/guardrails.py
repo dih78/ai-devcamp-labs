@@ -284,7 +284,10 @@ def redact_before_post(
     dict is passed on to the call); returning None lets the call proceed."""
     if not PII_REDACTION:
         return None
-    if tool.name == "create_post" and isinstance(args.get("text"), str):
+    # buffer_create_post is Buffer's create_post, renamed via tool_name_prefix
+    # in agent.py (two MCP servers expose the same tool name). Both spellings
+    # must hit this gate or a Buffer post skips DLP redaction entirely.
+    if tool.name in ("create_post", "buffer_create_post") and isinstance(args.get("text"), str):
         redacted = redact_pii(args["text"])
         if redacted != args["text"]:
             log.warning("DLP redacted PII from outgoing post")

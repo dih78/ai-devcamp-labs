@@ -66,11 +66,14 @@ GROUP BY agent
 ORDER BY errors DESC;
 
 -- Q5: approval to post. Of the sessions that drafted, how many reached create_post?
+-- buffer_create_post is Buffer's create_post, renamed via tool_name_prefix in
+-- agent.py; plain create_post is LinkedIn's.
 WITH s AS (
   SELECT
     session_id,
     LOGICAL_OR(event_type = 'TOOL_COMPLETED' AND JSON_VALUE(content, '$.tool') = 'draft_agent')       AS drafted,
-    LOGICAL_OR(event_type = 'TOOL_COMPLETED' AND JSON_VALUE(content, '$.tool') = 'create_post')       AS posted
+    LOGICAL_OR(event_type = 'TOOL_COMPLETED'
+               AND JSON_VALUE(content, '$.tool') IN ('create_post', 'buffer_create_post'))            AS posted
   FROM `PROJECT.DATASET.agent_events`
   GROUP BY session_id
 )
